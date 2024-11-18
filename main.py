@@ -215,12 +215,31 @@ def send_email(results):
 
         msg.attach(MIMEText(html_content, "html", "utf-8"))
 
-        with smtplib.SMTP_SSL(ENV["SMTP_HOST"], int(ENV["SMTP_PORT"])) as smtp:
-            smtp.login(ENV["SMTP_USER"], ENV["SMTP_PASS"])
-            smtp.send_message(msg)
+        # 添加详细的连接日志
+        logger.info(f"尝试连接 SMTP 服务器: {ENV['SMTP_HOST']}:{ENV['SMTP_PORT']}")
+
+        try:
+            smtp = smtplib.SMTP_SSL(ENV["SMTP_HOST"], int(ENV["SMTP_PORT"]))
+        except Exception as e:
+            logger.error(f"SMTP 服务器连接失败: {e}")
+            # 尝试不使用 SSL
+            logger.info("尝试使用非 SSL 连接")
+            smtp = smtplib.SMTP(ENV["SMTP_HOST"], int(ENV["SMTP_PORT"]))
+            smtp.starttls()  # 启用 TLS 加密
+
+        logger.info("SMTP 服务器连接成功，尝试登录")
+        smtp.login(ENV["SMTP_USER"], ENV["SMTP_PASS"])
+        logger.info("SMTP 登录成功，开始发送邮件")
+
+        smtp.send_message(msg)
+        smtp.quit()
         logger.info("签到结果邮件发送成功")
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"SMTP 认证失败，请检查用户名和密码: {e}")
+    except smtplib.SMTPException as e:
+        logger.error(f"SMTP 错误: {e}")
     except Exception as e:
-        logger.error(f"发送邮件失败: {e}")
+        logger.error(f"发送邮件失败: {str(e)}")
 
 
 def main():
