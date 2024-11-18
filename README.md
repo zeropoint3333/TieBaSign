@@ -42,15 +42,15 @@
 
 当然也可以仅配置BDUSS，不配置其他6个邮件相关配置
 
-| 变量名* | 说明 |
-| --- | --- |
-| BDUSS | xxxxxxxxxxx |
-| SMTP_HOST | 邮件服务器地址 |
-| SMTP_PORT | 邮件服务器端口 |
-| SMTP_USER | 邮箱账号 |
-| SMTP_PASS | 授权码/密码 |
-| SENDER | 发件人地址 |
-| RECEIVER | 收件人地址 |
+| 变量名* | 说明 | 示例 |
+| --- | --- | --- |
+| BDUSS | xxxxxxxxxxx | 1234abcd... (从浏览器 Cookie 中获取) |
+| SMTP_HOST | 邮件服务器地址 | smtp.gmail.com 或 smtp.qq.com |
+| SMTP_PORT | 邮件服务器端口 | 465 (SSL) 或 587 (TLS) |
+| SMTP_USER | 邮箱账号 | example@gmail.com |
+| SMTP_PASS | 授权码/密码 | abcdefghijklmnop |
+| SENDER | 发件人地址 | example@gmail.com |
+| RECEIVER | 收件人地址 | receiver@domain.com |
 
 ## 使用说明
 
