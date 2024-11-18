@@ -10,6 +10,11 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
 from config import Config
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.header import Header
+
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -170,6 +175,54 @@ def sign_one_bar(args):
         }
 
 
+def send_email(results):
+    """发送签到结果邮件"""
+    # 检查必要的环境变量
+    required_env = [
+        "SMTP_HOST",  # 必需：邮件服务器地址
+        "SMTP_PORT",  # 必需：服务器端口
+        "SMTP_USER",  # 必需：邮箱账号
+        "SMTP_PASS",  # 必需：授权码/密码
+        "SENDER",  # 必需：发件人地址
+        "RECEIVER",  # 必需：收件人地址
+    ]
+    if not all(key in ENV for key in required_env):
+        logger.warning("邮件环境变量不完整，跳过发送邮件")
+        return
+
+    # 统计签到结果
+    total = len(results)
+    success = len([r for r in results if r.get("is_success")])
+
+    # 构建邮件内容
+    html_content = f"""
+    <h3>贴吧签到统计</h3>
+    <p>总共签到：{total} 个贴吧</p>
+    <p>成功签到：{success} 个贴吧</p>
+    <p>失败签到：{total - success} 个贴吧</p>
+    <h3>详细签到情况：</h3>
+    <table border="1">
+        <tr><th>贴吧名称</th><th>签到状态</th></tr>
+        {''.join(f'<tr><td>{r["name"]}</td><td>{r["status"]}</td></tr>' for r in results)}
+    </table>
+    """
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = Header(ENV["SENDER"])
+        msg["To"] = Header(ENV["RECEIVER"])
+        msg["Subject"] = Header(f'贴吧签到结果通知 - {time.strftime("%Y-%m-%d")}')
+
+        msg.attach(MIMEText(html_content, "html", "utf-8"))
+
+        with smtplib.SMTP_SSL(ENV["SMTP_HOST"], int(ENV["SMTP_PORT"])) as smtp:
+            smtp.login(ENV["SMTP_USER"], ENV["SMTP_PASS"])
+            smtp.send_message(msg)
+        logger.info("签到结果邮件发送成功")
+    except Exception as e:
+        logger.error(f"发送邮件失败: {e}")
+
+
 def main():
     if "BDUSS" not in ENV:
         logger.error("未配置BDUSS")
@@ -202,6 +255,10 @@ def main():
                         )
                         executor._threads.clear()
                         break
+
+        # 每个用户签到完成后发送邮件
+        if results:
+            send_email(results)
 
 
 if __name__ == "__main__":
