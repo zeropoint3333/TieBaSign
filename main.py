@@ -6,9 +6,8 @@ import time
 import copy
 import logging
 import random
-
-import smtplib
-from email.mime.text import MIMEText
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -167,59 +166,44 @@ def client_sign(bduss, tbs, fid, kw):
     return res
 
 
-def send_email(sign_list):
-    if "HOST" not in ENV or "FROM" not in ENV or "TO" not in ENV or "AUTH" not in ENV:
-        logger.error("未配置邮箱")
-        return
-    HOST = ENV["HOST"]
-    FROM = ENV["FROM"]
-    TO = ENV["TO"].split("#")
-    AUTH = ENV["AUTH"]
-    length = len(sign_list)
-    subject = f"{time.strftime('%Y-%m-%d', time.localtime())} 签到{length}个贴吧"
-    body = """
-    <style>
-    .child {
-      background-color: rgba(173, 216, 230, 0.19);
-      padding: 10px;
-    }
-
-    .child * {
-      margin: 5px;
-    }
-    </style>
-    """
-    for i in sign_list:
-        body += f"""
-        <div class="child">
-            <div class="name"> 贴吧名称: { i['name'] }</div>
-            <div class="slogan"> 贴吧简介: { i['slogan'] }</div>
-        </div>
-        <hr>
-        """
-    msg = MIMEText(body, "html", "utf-8")
-    msg["subject"] = subject
-    smtp = smtplib.SMTP()
-    smtp.connect(HOST)
-    smtp.login(FROM, AUTH)
-    smtp.sendmail(FROM, TO, msg.as_string())
-    smtp.quit()
+def sign_one_bar(args):
+    """单个贴吧签到函数"""
+    bduss, tbs, bar = args
+    try:
+        time.sleep(random.randint(1, 3))  # 稍微降低延迟，因为是多线程了
+        res = client_sign(bduss, tbs, bar["id"], bar["name"])
+        logger.info(f'贴吧：{bar["name"]} 签到状态：{res.get("error_code", "未知")}')
+        return res
+    except Exception as e:
+        logger.error(f'贴吧：{bar["name"]} 签到异常：{str(e)}')
+        return None
 
 
 def main():
     if "BDUSS" not in ENV:
         logger.error("未配置BDUSS")
         return
+
     b = ENV["BDUSS"].split("#")
-    for n, i in enumerate(b):
-        logger.info("开始签到第%s个用户%s", n, i)
-        tbs = get_tbs(i)
-        favorites = get_favorite(i)
-        for j in favorites:
-            time.sleep(random.randint(1, 5))
-            client_sign(i, tbs, j["id"], j["name"])
+    # 设置线程池最大线程数
+    max_workers = min(20, os.cpu_count() * 5)  # 根据CPU核心数设置，最大20个线程
+
+    for n, bduss in enumerate(b):
+        logger.info("开始签到第%s个用户%s", n, bduss)
+        tbs = get_tbs(bduss)
+        favorites = get_favorite(bduss)
+
+        # 使用线程池进行签到
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 准备签到参数
+            sign_args = [(bduss, tbs, bar) for bar in favorites]
+            # 提交所有任务
+            futures = [executor.submit(sign_one_bar, args) for args in sign_args]
+            # 等待所有任务完成
+            concurrent.futures.wait(futures)
+
         logger.info("完成第%s个用户签到", n)
-    send_email(favorites)
+
     logger.info("所有用户签到结束")
 
 
