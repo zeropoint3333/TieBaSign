@@ -50,6 +50,14 @@ SIGN = "sign"
 KW = "kw"
 
 s = requests.Session()
+adapter = requests.adapters.HTTPAdapter(
+    pool_connections=20,  # 连接池的连接数
+    pool_maxsize=20,  # 连接池的最大数量
+    max_retries=3,  # 最大重试次数
+    pool_block=False,  # 连接池满时不阻塞
+)
+s.mount("http://", adapter)
+s.mount("https://", adapter)
 
 
 def get_tbs(bduss):
@@ -170,9 +178,10 @@ def sign_one_bar(args):
     """单个贴吧签到函数"""
     bduss, tbs, bar = args
     try:
-        time.sleep(random.randint(1, 3))  # 稍微降低延迟，因为是多线程了
+        time.sleep(random.randint(1, 3))  # 稍微降低延迟，因为开启了多线程
         res = client_sign(bduss, tbs, bar["id"], bar["name"])
-        logger.info(f'贴吧：{bar["name"]} 签到状态：{res.get("error_code", "未知")}')
+        status = "已签到" if res.get("error_code") == "160002" else "未知"
+        logger.info(f'贴吧：{bar["name"]} 签到状态：{status}')
         return res
     except Exception as e:
         logger.error(f'贴吧：{bar["name"]} 签到异常：{str(e)}')
