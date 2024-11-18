@@ -28,6 +28,8 @@
   - API 接口地址
   - 请求头信息
 
+![image](./image/image.png)
+
 ## 配置说明
 
 主要配置项（在 `config.py` 中）：
