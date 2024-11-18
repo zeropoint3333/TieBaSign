@@ -8,52 +8,20 @@ import logging
 import random
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor
+from config import Config
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# API_URL
-LIKIE_URL = "http://c.tieba.baidu.com/c/f/forum/like"
-TBS_URL = "http://tieba.baidu.com/dc/common/tbs"
-SIGN_URL = "http://c.tieba.baidu.com/c/c/forum/sign"
-
 ENV = os.environ
-
-HEADERS = {
-    "Host": "tieba.baidu.com",
-    "User-Agent": "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.71 Safari/537.36",
-}
-SIGN_DATA = {
-    "_client_type": "2",
-    "_client_version": "9.7.8.0",
-    "_phone_imei": "000000000000000",
-    "model": "MI+5",
-    "net_type": "1",
-}
-
-# VARIABLE NAME
-COOKIE = "Cookie"
-BDUSS = "BDUSS"
-EQUAL = "="
-EMPTY_STR = ""
-TBS = "tbs"
-PAGE_NO = "page_no"
-ONE = "1"
-TIMESTAMP = "timestamp"
-DATA = "data"
-FID = "fid"
-SIGN_KEY = "tiebaclient!!!"
-UTF8 = "utf-8"
-SIGN = "sign"
-KW = "kw"
 
 s = requests.Session()
 adapter = requests.adapters.HTTPAdapter(
-    pool_connections=20,  # 连接池的连接数
-    pool_maxsize=20,  # 连接池的最大数量
-    max_retries=3,  # 最大重试次数
+    pool_connections=Config.HTTP_SETTINGS["POOL_CONNECTIONS"],  # 连接池的连接数
+    pool_maxsize=Config.HTTP_SETTINGS["POOL_MAXSIZE"],  # 连接池的最大数量
+    max_retries=Config.HTTP_SETTINGS["RETRY_TIMES"],  # 最大重试次数
     pool_block=False,  # 连接池满时不阻塞
 )
 s.mount("http://", adapter)
@@ -62,53 +30,32 @@ s.mount("https://", adapter)
 
 def get_tbs(bduss):
     logger.info("获取tbs开始")
-    headers = copy.copy(HEADERS)
-    headers.update({COOKIE: EMPTY_STR.join([BDUSS, EQUAL, bduss])})
+    headers = copy.copy(Config.HEADERS)
+    headers.update({"Cookie": f"BDUSS={bduss}"})
     try:
-        tbs = s.get(url=TBS_URL, headers=headers, timeout=5).json()[TBS]
+        tbs = s.get(
+            url=Config.API_URLS["TBS_URL"],
+            headers=headers,
+            timeout=Config.HTTP_SETTINGS["TIMEOUT"],
+        ).json()["tbs"]
     except Exception as e:
         logger.error("获取tbs出错: %s", e)
         logger.info("重新获取tbs开始")
-        tbs = s.get(url=TBS_URL, headers=headers, timeout=5).json()[TBS]
+        tbs = s.get(
+            url=Config.API_URLS["TBS_URL"],
+            headers=headers,
+            timeout=Config.HTTP_SETTINGS["TIMEOUT"],
+        ).json()["tbs"]
     logger.info("获取tbs结束")
     return tbs
 
 
 def get_favorite(bduss):
     logger.info("获取关注的贴吧开始")
-    returnData = {}
-    i = 1
-    data = {
-        "BDUSS": bduss,
-        "_client_type": "2",
-        "_client_id": "wappc_1534235498291_488",
-        "_client_version": "9.7.8.0",
-        "_phone_imei": "000000000000000",
-        "from": "1008621y",
-        "page_no": "1",
-        "page_size": "200",
-        "model": "MI+5",
-        "net_type": "1",
-        "timestamp": str(int(time.time())),
-        "vcode_tag": "11",
-    }
-    data = encodeData(data)
-    try:
-        res = s.post(url=LIKIE_URL, data=data, timeout=5).json()
-    except Exception as e:
-        logger.error("获取关注的贴吧出错: %s", e)
-        return []
-    returnData = res
-    if "forum_list" not in returnData:
-        returnData["forum_list"] = []
-    if res["forum_list"] == []:
-        return {"gconforum": [], "non-gconforum": []}
-    if "non-gconforum" not in returnData["forum_list"]:
-        returnData["forum_list"]["non-gconforum"] = []
-    if "gconforum" not in returnData["forum_list"]:
-        returnData["forum_list"]["gconforum"] = []
-    while "has_more" in res and res["has_more"] == "1":
-        i += 1
+    all_bars = []
+    page = 1
+
+    while True:
         data = {
             "BDUSS": bduss,
             "_client_type": "2",
@@ -116,61 +63,73 @@ def get_favorite(bduss):
             "_client_version": "9.7.8.0",
             "_phone_imei": "000000000000000",
             "from": "1008621y",
-            "page_no": str(i),
+            "page_no": str(page),
             "page_size": "200",
             "model": "MI+5",
             "net_type": "1",
             "timestamp": str(int(time.time())),
             "vcode_tag": "11",
         }
-        data = encodeData(data)
-        try:
-            res = s.post(url=LIKIE_URL, data=data, timeout=5).json()
-        except Exception as e:
-            logger.error("获取关注的贴吧出错: %s", e)
-            continue
-        if "forum_list" not in res:
-            continue
-        if "non-gconforum" in res["forum_list"]:
-            returnData["forum_list"]["non-gconforum"].append(
-                res["forum_list"]["non-gconforum"]
-            )
-        if "gconforum" in res["forum_list"]:
-            returnData["forum_list"]["gconforum"].append(res["forum_list"]["gconforum"])
 
-    t = []
-    for i in returnData["forum_list"]["non-gconforum"]:
-        if isinstance(i, list):
-            t.extend(i)
-        else:
-            t.append(i)
-    for i in returnData["forum_list"]["gconforum"]:
-        if isinstance(i, list):
-            t.extend(i)
-        else:
-            t.append(i)
-    logger.info("获取关注的贴吧结束")
-    return t
+        try:
+            res = s.post(
+                url=Config.API_URLS["LIKE_URL"],
+                data=encodeData(data),
+                timeout=Config.HTTP_SETTINGS["TIMEOUT"],
+            ).json()
+
+            if not res.get("forum_list"):
+                break
+
+            for forum_type in ["non-gconforum", "gconforum"]:
+                if forum_type in res["forum_list"]:
+                    items = res["forum_list"][forum_type]
+                    if isinstance(items, list):
+                        all_bars.extend(items)
+                    else:
+                        all_bars.append(items)
+
+            if res.get("has_more") != "1":
+                break
+
+            page += 1
+
+        except Exception as e:
+            logger.error(f"获取第{page}页贴吧列表失败: {e}")
+            break
+
+    logger.info(f"共获取到{len(all_bars)}个贴吧")
+    return all_bars
 
 
 def encodeData(data):
-    s = EMPTY_STR
+    s = ""
     keys = data.keys()
     for i in sorted(keys):
-        s += i + EQUAL + str(data[i])
-    sign = hashlib.md5((s + SIGN_KEY).encode(UTF8)).hexdigest().upper()
-    data.update({SIGN: str(sign)})
+        s += i + "=" + str(data[i])
+    sign = hashlib.md5((s + "tiebaclient!!!").encode("utf-8")).hexdigest().upper()
+    data.update({"sign": str(sign)})
     return data
 
 
 def client_sign(bduss, tbs, fid, kw):
     logger.info("开始签到贴吧：" + kw)
-    data = copy.copy(SIGN_DATA)
+    data = copy.copy(Config.SIGN_DATA)
     data.update(
-        {BDUSS: bduss, FID: fid, KW: kw, TBS: tbs, TIMESTAMP: str(int(time.time()))}
+        {
+            "BDUSS": bduss,
+            "fid": fid,
+            "kw": kw,
+            "tbs": tbs,
+            "timestamp": str(int(time.time())),
+        }
     )
     data = encodeData(data)
-    res = s.post(url=SIGN_URL, data=data, timeout=5).json()
+    res = s.post(
+        url=Config.API_URLS["SIGN_URL"],
+        data=data,
+        timeout=Config.HTTP_SETTINGS["TIMEOUT"],
+    ).json()
     return res
 
 
@@ -178,14 +137,37 @@ def sign_one_bar(args):
     """单个贴吧签到函数"""
     bduss, tbs, bar = args
     try:
-        time.sleep(random.randint(1, 3))  # 稍微降低延迟，因为开启了多线程
+        time.sleep(
+            random.randint(
+                Config.THREAD_SETTINGS["MIN_DELAY"], Config.THREAD_SETTINGS["MAX_DELAY"]
+            )
+        )
         res = client_sign(bduss, tbs, bar["id"], bar["name"])
-        status = "已签到" if res.get("error_code") == "160002" else "未知"
-        logger.info(f'贴吧：{bar["name"]} 签到状态：{status}')
-        return res
+
+        error_code = res.get("error_code", "unknown")
+        status = Config.ERROR_CODES.get(str(error_code), f"未知错误: {error_code}")
+
+        if error_code in Config.SUCCESS_CODES:
+            logger.info(f'贴吧：{bar["name"]} 签到状态：{status}')
+        elif error_code in Config.CRITICAL_ERRORS:
+            logger.warning(f'贴吧：{bar["name"]} 签到状态：{status}')
+        else:
+            logger.error(f'贴吧：{bar["name"]} 签到状态：{status}')
+
+        return {
+            "name": bar["name"],
+            "status": status,
+            "error_code": error_code,
+            "is_success": error_code in Config.SUCCESS_CODES,
+        }
     except Exception as e:
         logger.error(f'贴吧：{bar["name"]} 签到异常：{str(e)}')
-        return None
+        return {
+            "name": bar["name"],
+            "status": "签到异常",
+            "error": str(e),
+            "is_success": False,
+        }
 
 
 def main():
@@ -194,26 +176,32 @@ def main():
         return
 
     b = ENV["BDUSS"].split("#")
-    # 设置线程池最大线程数
-    max_workers = min(20, os.cpu_count() * 5)  # 根据CPU核心数设置，最大20个线程
+    max_workers = min(Config.THREAD_SETTINGS["MAX_WORKERS"], os.cpu_count() * 5)
 
     for n, bduss in enumerate(b):
-        logger.info("开始签到第%s个用户%s", n, bduss)
-        tbs = get_tbs(bduss)
-        favorites = get_favorite(bduss)
+        logger.info(f"开始签到第{n+1}个用户")
+        try:
+            tbs = get_tbs(bduss)
+            favorites = get_favorite(bduss)
+        except Exception as e:
+            logger.error(f"用户签到失败: {e}")
+            continue
 
-        # 使用线程池进行签到
+        results = []
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # 准备签到参数
             sign_args = [(bduss, tbs, bar) for bar in favorites]
-            # 提交所有任务
             futures = [executor.submit(sign_one_bar, args) for args in sign_args]
-            # 等待所有任务完成
-            concurrent.futures.wait(futures)
 
-        logger.info("完成第%s个用户签到", n)
-
-    logger.info("所有用户签到结束")
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                if result:
+                    results.append(result)
+                    if result.get("error_code") in Config.CRITICAL_ERRORS:
+                        logger.warning(
+                            f"检测到严重问题：{result['status']}，停止当前用户的签到"
+                        )
+                        executor._threads.clear()
+                        break
 
 
 if __name__ == "__main__":
