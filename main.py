@@ -139,7 +139,6 @@ def client_sign(bduss, tbs, fid, kw):
 
 
 def sign_one_bar(args):
-    """单个贴吧签到函数"""
     bduss, tbs, bar = args
     try:
         time.sleep(
@@ -161,6 +160,7 @@ def sign_one_bar(args):
 
         return {
             "name": bar["name"],
+            "bar": bar,
             "status": status,
             "error_code": error_code,
             "is_success": error_code in Config.SUCCESS_CODES,
@@ -169,6 +169,7 @@ def sign_one_bar(args):
         logger.error(f'贴吧：{bar["name"]} 签到异常：{str(e)}')
         return {
             "name": bar["name"],
+            "bar": bar,
             "status": "签到异常",
             "error": str(e),
             "is_success": False,
@@ -259,25 +260,48 @@ def main():
             logger.error(f"用户签到失败: {e}")
             continue
 
-        results = []
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            sign_args = [(bduss, tbs, bar) for bar in favorites]
-            futures = [executor.submit(sign_one_bar, args) for args in sign_args]
+        rounds = 0
+        to_sign = favorites[:]
+        all_results = []
 
-            for future in concurrent.futures.as_completed(futures):
-                result = future.result()
-                if result:
-                    results.append(result)
-                    if result.get("error_code") in Config.CRITICAL_ERRORS:
-                        logger.warning(
-                            f"检测到严重问题：{result['status']}，停止当前用户的签到"
-                        )
-                        executor._threads.clear()
-                        break
+        while rounds < 5 and to_sign:  # 当 to_sign 为空时，循环会结束
+            rounds += 1
+            logger.info(f"开始第 {rounds} 轮签到，待签到贴吧数：{len(to_sign)}")
+            results = []
 
-        # 每个用户签到完成后发送邮件
-        if results:
-            send_email(results)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_bar = {
+                    executor.submit(sign_one_bar, (bduss, tbs, bar)): bar
+                    for bar in to_sign
+                }
+                # 并发执行签到
+                for future in concurrent.futures.as_completed(future_to_bar):
+                    result = future.result()
+                    if result:
+                        results.append(result)
+                        if result.get("error_code") in Config.CRITICAL_ERRORS:
+                            logger.warning(
+                                f"检测到严重问题：{result['status']}，停止当前用户的签到"
+                            )
+                            executor._threads.clear()
+                            break
+
+            all_results.extend(results)
+
+            # 过滤出未签到成功的贴吧
+            to_sign = [
+                result["bar"] for result in results if not result.get("is_success")
+            ]
+
+            if to_sign:
+                logger.info(f"本轮签到完成，等待1分钟后进行下一轮签到")
+                time.sleep(60)
+            else:
+                logger.info("所有贴吧签到成功，结束签到")
+                break
+
+        if all_results:
+            send_email(all_results)
 
 
 if __name__ == "__main__":

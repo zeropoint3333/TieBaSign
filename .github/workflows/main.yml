@@ -5,7 +5,8 @@ on:
     branches:
       - main
   schedule:
-    - cron: '5 16,22 * * *'
+    - cron: '30-59 20,9 * * *'   # UTC 20:30-20:59 (北京 04:30-04:59)
+    - cron: '0-30 10,17 * * *'   # UTC 10:00-10:30 (北京 18:00-18:30)
 
 jobs:
   tieba_sign:
