@@ -212,7 +212,11 @@ def send_email(results):
         msg = MIMEMultipart()
         msg["From"] = Header(ENV["SENDER"])
         msg["To"] = Header(ENV["RECEIVER"])
-        msg["Subject"] = Header(f'贴吧签到结果通知 - {time.strftime("%Y-%m-%d")}')
+        # 获取北京时间
+        beijing_time = time.localtime(time.time() + 8 * 3600)  # UTC+8
+        date_str = time.strftime("%Y-%m-%d", beijing_time)
+
+        msg["Subject"] = Header(f"贴吧签到结果通知 - {date_str}")
 
         msg.attach(MIMEText(html_content, "html", "utf-8"))
 
