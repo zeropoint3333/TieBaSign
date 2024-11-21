@@ -5,8 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '35 20 * * *'
-    - cron: '5 10 * * *'
+    - cron: '55 18 * * *'  # UTC 18:55 = 北京时间 02:55
   workflow_dispatch:
     
 jobs:
